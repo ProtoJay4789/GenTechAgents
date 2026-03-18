@@ -341,6 +341,10 @@ export interface JinnConfig {
   };
   stt?: {
     enabled?: boolean;
+    /** Transcription backend: "whisper" (local whisper-cli) or "groq" (Groq cloud API). Default: "whisper". */
+    provider?: "whisper" | "groq";
+    /** API key for Groq. Required when provider is "groq". Supports ${GROQ_API_KEY} env substitution. */
+    groqApiKey?: string;
     model?: string;
     /** @deprecated Use `languages` instead. Kept for backwards compat. */
     language?: string;

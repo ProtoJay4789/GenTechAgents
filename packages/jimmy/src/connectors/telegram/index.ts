@@ -4,6 +4,7 @@ import type {
   ConnectorCapabilities,
   ConnectorHealth,
   IncomingMessage,
+  JinnConfig,
   ReplyContext,
   Target,
   TelegramConnectorConfig,
@@ -22,6 +23,23 @@ interface BotInstance {
   botId: number | null;
 }
 
+/** Transcribe a voice/video_note file using the configured STT provider. */
+async function transcribeVoice(
+  audioPath: string,
+  sttConfig?: JinnConfig["stt"],
+): Promise<string | null> {
+  if (!sttConfig?.enabled) return null;
+
+  if (sttConfig.provider === "groq" && sttConfig.groqApiKey) {
+    const { transcribeWithGroq } = await import("../../stt/groq.js");
+    return transcribeWithGroq(audioPath, sttConfig.groqApiKey, sttConfig.languages?.[0] ?? sttConfig.language);
+  }
+
+  // Fall back to local whisper-cli
+  const { transcribe } = await import("../../stt/stt.js");
+  return transcribe(audioPath, sttConfig.model || "small", sttConfig.languages?.[0] ?? sttConfig.language);
+}
+
 export class TelegramConnector implements Connector {
   name = "telegram";
   private bots: BotInstance[] = [];
@@ -31,6 +49,7 @@ export class TelegramConnector implements Connector {
   private readonly bootTimeMs = Date.now();
   private started = false;
   private lastError: string | null = null;
+  private sttConfig?: JinnConfig["stt"];
   /** Maps chatId → BotInstance for routing replies through the correct bot */
   private chatBotMap = new Map<string, BotInstance>();
 
@@ -41,7 +60,8 @@ export class TelegramConnector implements Connector {
     attachments: true,
   };
 
-  constructor(config: TelegramConnectorConfig) {
+  constructor(config: TelegramConnectorConfig, sttConfig?: JinnConfig["stt"]) {
+    this.sttConfig = sttConfig;
     this.ignoreOldMessagesOnBoot = config.ignoreOldMessagesOnBoot !== false;
     const allowFrom = Array.isArray(config.allowFrom)
       ? config.allowFrom
@@ -99,7 +119,7 @@ export class TelegramConnector implements Connector {
         }
 
         const text = tmsg.text || "";
-        if (!text && !msg.document && !msg.photo) return;
+        if (!text && !msg.document && !msg.photo && !msg.voice && !msg.video_note) return;
 
         // Track which bot "owns" this chat for outbound replies
         this.chatBotMap.set(String(tmsg.chat.id), instance);
@@ -143,6 +163,26 @@ export class TelegramConnector implements Connector {
           }
         }
 
+        // Handle voice messages and video notes — download + transcribe
+        let voiceText = "";
+        if (msg.voice || msg.video_note) {
+          try {
+            const voiceObj = msg.voice || msg.video_note;
+            const fileLink = await bot.getFileLink(voiceObj!.file_id);
+            const ext = msg.voice ? ".ogg" : ".mp4";
+            const filename = `${randomUUID()}${ext}`;
+            const localPath = await downloadAttachment(fileLink, TMP_DIR, filename);
+
+            const transcription = await transcribeVoice(localPath, this.sttConfig);
+            if (transcription) {
+              voiceText = `[Voice message transcription]: ${transcription}`;
+              logger.info(`[${label}] Transcribed voice message: "${transcription.slice(0, 80)}..."`);
+            }
+          } catch (err) {
+            logger.warn(`[${label}] Failed to process voice message: ${err}`);
+          }
+        }
+
         const chatTitle = tmsg.chat.title || tmsg.chat.username || String(tmsg.chat.id);
 
         const incoming: IncomingMessage = {
@@ -155,7 +195,7 @@ export class TelegramConnector implements Connector {
           thread: undefined,
           user: tmsg.from?.username || String(tmsg.from?.id ?? "unknown"),
           userId: String(tmsg.from?.id ?? "unknown"),
-          text: (msg.caption ? `${msg.caption}\n` : "") + text,
+          text: (msg.caption ? `${msg.caption}\n` : "") + (voiceText ? `${voiceText}\n` : "") + text,
           attachments,
           raw: msg,
           transportMeta: {

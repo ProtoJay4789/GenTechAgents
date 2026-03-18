@@ -69,6 +69,14 @@ cron:
   # alertConnector: slack
   # alertChannel: "#alerts"
 
+# Speech-to-text for voice messages (Telegram, WhatsApp, etc.)
+stt:
+  enabled: true
+  provider: groq              # "groq" (cloud API, fast) or "whisper" (local whisper-cli)
+  groqApiKey: ${GROQ_API_KEY}  # Required when provider is "groq"
+  # model: small              # Whisper model name (only for local whisper provider)
+  languages: ["en"]
+
 portal:
   language: English
 
