@@ -6,10 +6,10 @@ module.exports = {
   apps: [
     {
       name: "gentech-agents",
-      script: "node_modules/.bin/jinn",
+      script: "packages/jimmy/dist/bin/jimmy.js",
       args: "start",
       cwd: "/opt/gentech-agents",
-      interpreter: "none",
+      interpreter: "node",
       env_file: "/opt/gentech-agents/.env",
       // Restart if it crashes, but not in a loop
       max_restarts: 10,
