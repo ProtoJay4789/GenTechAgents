@@ -177,8 +177,8 @@ export function buildContext(opts: {
     });
   }
 
-  // ── OPTIONAL: Delegation protocol (COO only) ───────────────
-  if (!opts.employee) {
+  // ── OPTIONAL: Delegation protocol (COO + managers) ─────────
+  if (!opts.employee || opts.employee.rank === "manager") {
     sections.push({
       tier: Tier.OPTIONAL,
       marker: "## Employee Delegation",
