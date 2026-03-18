@@ -18,8 +18,24 @@ engines:
 
 connectors:
   slack:
+    # appToken: xapp-...          # Socket Mode token (from Slack App → Basic Information → App-Level Tokens)
+    # botToken: xoxb-...          # Bot token (from Slack App → OAuth & Permissions)
+    # allowFrom: []               # Optional: restrict to specific Slack user IDs
     shareSessionInChannel: false
     ignoreOldMessagesOnBoot: true
+  # telegram:
+  #   # Single bot mode:
+  #   # botToken: "123456:ABC-..."
+  #   # Team mode (multiple bots, each bound to an agent):
+  #   bots:
+  #     - botToken: "123456:ABC-..."
+  #       employee: gentech        # Routes all messages to this agent
+  #     - botToken: "654321:DEF-..."
+  #       employee: yoyo
+  #     - botToken: "789012:GHI-..."
+  #       employee: dmob
+  #   allowFrom: []                # Optional: restrict to specific Telegram user IDs
+  #   ignoreOldMessagesOnBoot: true
 
 # MCP servers provide employees with browser, search, and messaging capabilities.
 # These are injected automatically into Claude Code sessions via --mcp-config.
