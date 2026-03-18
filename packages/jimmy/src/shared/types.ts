@@ -277,6 +277,13 @@ export interface WhatsAppConnectorConfig {
   ignoreOldMessagesOnBoot?: boolean;
 }
 
+export interface TelegramConnectorConfig {
+  botToken: string;
+  /** Allowed Telegram user IDs — empty or omitted = allow all */
+  allowFrom?: string | string[];
+  ignoreOldMessagesOnBoot?: boolean;
+}
+
 export interface PortalConfig {
   portalName?: string;
   operatorName?: string;
@@ -296,6 +303,7 @@ export interface JinnConfig {
     slack?: SlackConnectorConfig;
     discord?: DiscordConnectorConfig;
     whatsapp?: WhatsAppConnectorConfig;
+    telegram?: TelegramConnectorConfig;
   };
   logging: { file: boolean; stdout: boolean; level: string };
   mcp?: McpGlobalConfig;

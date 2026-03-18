@@ -103,10 +103,52 @@ connectors:
     allowFrom: []           # Optional: restrict to specific phone numbers
 ```
 
+## Telegram Connector
+
+Uses `node-telegram-bot-api` with long polling (no webhook URL required).
+
+### Configuration
+
+```yaml
+connectors:
+  telegram:
+    botToken: "123456:ABC-..."    # Bot token from @BotFather
+    allowFrom: []                  # Optional: restrict to specific Telegram user IDs
+    ignoreOldMessagesOnBoot: true
+```
+
+### Required Setup
+
+1. Message `@BotFather` on Telegram
+2. Send `/newbot` and follow the prompts to create a bot
+3. Copy the bot token (format: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
+4. Add the token to `config.yaml` under `connectors.telegram.botToken`
+
+For a full walkthrough, use the `telegram-setup` skill.
+
+### Session Mapping
+
+| Context | Session Key | Behavior |
+|---|---|---|
+| Private chat (DM) | `telegram:dm:<userId>` | One session per user |
+| Group/supergroup | `telegram:<chatId>` | One session per group |
+
+### Capabilities
+
+- **Threading**: Not supported (Telegram groups use flat messages)
+- **Message edits**: Supported (bot can edit its own messages)
+- **Reactions**: Not supported via Bot API
+- **Attachments**: Supported (documents, photos)
+- **Typing indicator**: Supported (`sendChatAction("typing")`)
+
+### Employee Routing
+
+- Default: messages route to the default employee ({{portalName}})
+- `@mention`: messages mentioning a specific employee name route to that employee
+
 ## Future Connectors
 
 The connector interface is designed for additional platforms:
-- **Telegram**: Bot API integration
 - **iMessage**: macOS-only via AppleScript bridge
 - **Email**: IMAP/SMTP integration
 - **Webhooks**: Generic HTTP webhook receiver

@@ -23,6 +23,10 @@ connectors:
     # allowFrom: []               # Optional: restrict to specific Slack user IDs
     shareSessionInChannel: false
     ignoreOldMessagesOnBoot: true
+  # telegram:
+  #   botToken: "123456:ABC-..."  # Bot token from @BotFather
+  #   allowFrom: []               # Optional: restrict to specific Telegram user IDs
+  #   ignoreOldMessagesOnBoot: true
 
 # MCP servers provide employees with browser, search, and messaging capabilities.
 # These are injected automatically into Claude Code sessions via --mcp-config.

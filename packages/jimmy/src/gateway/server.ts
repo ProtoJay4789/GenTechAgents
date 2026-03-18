@@ -20,6 +20,7 @@ import { SlackConnector } from "../connectors/slack/index.js";
 import { DiscordConnector } from "../connectors/discord/index.js";
 import { RemoteDiscordConnector } from "../connectors/discord/remote.js";
 import { WhatsAppConnector } from "../connectors/whatsapp/index.js";
+import { TelegramConnector } from "../connectors/telegram/index.js";
 import { loadJobs } from "../cron/jobs.js";
 import { startScheduler, reloadScheduler, stopScheduler } from "../cron/scheduler.js";
 import { scanOrg } from "./org.js";
@@ -145,6 +146,9 @@ export async function startGateway(
   if (config.connectors?.whatsapp) {
     connectorNames.push("whatsapp");
   }
+  if (config.connectors?.telegram?.botToken) {
+    connectorNames.push("telegram");
+  }
 
   // Session manager
   const sessionManager = new SessionManager(config, engines, connectorNames);
@@ -244,6 +248,23 @@ export async function startGateway(
       logger.info("WhatsApp connector started (scan QR code if first run)");
     } catch (err) {
       logger.error(`Failed to start WhatsApp connector: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  if (config.connectors?.telegram?.botToken) {
+    try {
+      const telegram = new TelegramConnector(config.connectors.telegram);
+      telegram.onMessage((msg) => {
+        sessionManager.route(msg, telegram).catch((err) => {
+          logger.error(`Telegram route error: ${err instanceof Error ? err.message : err}`);
+        });
+      });
+      await telegram.start();
+      connectors.push(telegram);
+      connectorMap.set("telegram", telegram);
+      logger.info("Telegram connector started");
+    } catch (err) {
+      logger.error(`Failed to start Telegram connector: ${err instanceof Error ? err.message : err}`);
     }
   }
 
