@@ -25,6 +25,8 @@ connectors:
         employee: yoyo
       - botToken: "${TELEGRAM_BOT_TOKEN_DMOB}"
         employee: dmob
+      - botToken: "${TELEGRAM_BOT_TOKEN_Desmond}"
+        employee: desmond
     ignoreOldMessagesOnBoot: true
 
 mcp:
