@@ -253,7 +253,7 @@ export async function startGateway(
 
   if (config.connectors?.telegram?.botToken || config.connectors?.telegram?.bots?.length) {
     try {
-      const telegram = new TelegramConnector(config.connectors.telegram!);
+      const telegram = new TelegramConnector(config.connectors.telegram!, config.stt);
       telegram.onMessage((msg) => {
         // If the bot is bound to an employee, resolve and pass as route option
         const boundName = (msg.transportMeta as Record<string, unknown> | undefined)?.boundEmployee;

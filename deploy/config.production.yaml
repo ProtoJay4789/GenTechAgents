@@ -25,6 +25,8 @@ connectors:
         employee: yoyo
       - botToken: "${TELEGRAM_BOT_TOKEN_DMOB}"
         employee: dmob
+      - botToken: "${TELEGRAM_BOT_TOKEN_Desmond}"
+        employee: desmond
     ignoreOldMessagesOnBoot: true
 
 mcp:
@@ -43,6 +45,12 @@ mcp:
 sessions:
   maxDurationMinutes: 60
   maxCostUsd: 15.00
+
+stt:
+  provider: groq
+  model: whisper-large-v3-turbo
+  languages:
+    - en
 
 portal:
   language: English
