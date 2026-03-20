@@ -186,6 +186,58 @@ async function convertToWav(inputPath: string): Promise<string> {
   return wavPath;
 }
 
+/**
+ * Transcribe audio using the Groq cloud API (whisper-large-v3-turbo).
+ * Accepts OGG, MP3, MP4, WAV, WebM — no local conversion needed.
+ */
+export async function transcribeGroq(
+  audioPath: string,
+  model?: string,
+  language?: string,
+): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("GROQ_API_KEY not set");
+
+  const audioBuffer = fs.readFileSync(audioPath);
+  const formData = new FormData();
+  formData.append("file", new Blob([audioBuffer]), path.basename(audioPath));
+  formData.append("model", model || "whisper-large-v3-turbo");
+  if (language) formData.append("language", language);
+
+  const resp = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: formData,
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Groq API error ${resp.status}: ${errText}`);
+  }
+
+  const result = await resp.json() as { text: string };
+  return result.text.trim();
+}
+
+/**
+ * Auto-select transcription provider based on config.
+ * Defaults to Groq (cloud) if available, falls back to local whisper-cli.
+ */
+export async function transcribeAuto(
+  audioPath: string,
+  sttConfig?: { provider?: string; model?: string; language?: string; languages?: string[] },
+): Promise<string> {
+  const provider = sttConfig?.provider || "groq";
+  const languages = resolveLanguages(sttConfig);
+  const language = languages[0] || "en";
+
+  if (provider === "groq") {
+    return transcribeGroq(audioPath, sttConfig?.model, language);
+  }
+  const model = sttConfig?.model || "small";
+  return transcribe(audioPath, model, language);
+}
+
 export async function transcribe(
   audioPath: string,
   model: string,

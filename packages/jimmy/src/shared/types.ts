@@ -277,6 +277,22 @@ export interface WhatsAppConnectorConfig {
   ignoreOldMessagesOnBoot?: boolean;
 }
 
+export interface TelegramBotConfig {
+  botToken: string;
+  /** Employee name this bot is bound to — messages route directly to this agent */
+  employee?: string;
+}
+
+export interface TelegramConnectorConfig {
+  /** Single bot token (simple mode) */
+  botToken?: string;
+  /** Multiple bots, each optionally bound to an employee (team mode) */
+  bots?: TelegramBotConfig[];
+  /** Allowed Telegram user IDs — empty or omitted = allow all */
+  allowFrom?: string | string[];
+  ignoreOldMessagesOnBoot?: boolean;
+}
+
 export interface PortalConfig {
   portalName?: string;
   operatorName?: string;
@@ -296,6 +312,7 @@ export interface JinnConfig {
     slack?: SlackConnectorConfig;
     discord?: DiscordConnectorConfig;
     whatsapp?: WhatsAppConnectorConfig;
+    telegram?: TelegramConnectorConfig;
   };
   logging: { file: boolean; stdout: boolean; level: string };
   mcp?: McpGlobalConfig;
@@ -324,6 +341,7 @@ export interface JinnConfig {
   };
   stt?: {
     enabled?: boolean;
+    provider?: "groq" | "whisper";
     model?: string;
     /** @deprecated Use `languages` instead. Kept for backwards compat. */
     language?: string;
