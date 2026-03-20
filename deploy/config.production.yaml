@@ -46,6 +46,12 @@ sessions:
   maxDurationMinutes: 60
   maxCostUsd: 15.00
 
+stt:
+  provider: groq
+  model: whisper-large-v3-turbo
+  languages:
+    - en
+
 portal:
   language: English
 

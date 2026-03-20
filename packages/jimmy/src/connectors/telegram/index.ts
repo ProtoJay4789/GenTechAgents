@@ -1,4 +1,5 @@
 import TelegramBot from "node-telegram-bot-api";
+import fs from "node:fs";
 import type {
   Connector,
   ConnectorCapabilities,
@@ -15,6 +16,7 @@ import { formatResponse, downloadAttachment } from "./format.js";
 import { TMP_DIR } from "../../shared/paths.js";
 import { logger } from "../../shared/logger.js";
 import { randomUUID } from "node:crypto";
+import { transcribeAuto } from "../../stt/stt.js";
 
 interface BotInstance {
   bot: TelegramBot;
@@ -33,6 +35,7 @@ export class TelegramConnector implements Connector {
   private lastError: string | null = null;
   /** Maps chatId → BotInstance for routing replies through the correct bot */
   private chatBotMap = new Map<string, BotInstance>();
+  private readonly sttConfig?: { provider?: string; model?: string; language?: string; languages?: string[] };
 
   private readonly capabilities: ConnectorCapabilities = {
     threading: false,
@@ -41,7 +44,8 @@ export class TelegramConnector implements Connector {
     attachments: true,
   };
 
-  constructor(config: TelegramConnectorConfig) {
+  constructor(config: TelegramConnectorConfig, sttConfig?: { provider?: string; model?: string; language?: string; languages?: string[] }) {
+    this.sttConfig = sttConfig;
     this.ignoreOldMessagesOnBoot = config.ignoreOldMessagesOnBoot !== false;
     const allowFrom = Array.isArray(config.allowFrom)
       ? config.allowFrom
@@ -98,8 +102,8 @@ export class TelegramConnector implements Connector {
           return;
         }
 
-        const text = tmsg.text || "";
-        if (!text && !msg.document && !msg.photo) return;
+        let text = tmsg.text || "";
+        if (!text && !msg.document && !msg.photo && !msg.voice) return;
 
         // Track which bot "owns" this chat for outbound replies
         this.chatBotMap.set(String(tmsg.chat.id), instance);
@@ -140,6 +144,27 @@ export class TelegramConnector implements Connector {
             });
           } catch (err) {
             logger.warn(`[${label}] Failed to download photo: ${err}`);
+          }
+        }
+
+        // Voice message transcription via Groq / whisper
+        if (msg.voice) {
+          try {
+            const fileLink = await bot.getFileLink(msg.voice.file_id);
+            const filename = `${randomUUID()}.ogg`;
+            const localPath = await downloadAttachment(fileLink, TMP_DIR, filename);
+            try {
+              const transcription = await transcribeAuto(localPath, this.sttConfig);
+              text = `[Voice message transcription]: ${transcription}`;
+              logger.info(`[${label}] Transcribed voice (${msg.voice.duration}s): "${transcription.slice(0, 80)}"`);
+            } catch (err) {
+              logger.warn(`[${label}] Voice transcription failed: ${err}`);
+              text = "[Voice message received but transcription failed]";
+            } finally {
+              try { fs.unlinkSync(localPath); } catch { /* ignore */ }
+            }
+          } catch (err) {
+            logger.warn(`[${label}] Failed to download voice: ${err}`);
           }
         }
 

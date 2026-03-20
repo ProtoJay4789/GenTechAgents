@@ -341,6 +341,7 @@ export interface JinnConfig {
   };
   stt?: {
     enabled?: boolean;
+    provider?: "groq" | "whisper";
     model?: string;
     /** @deprecated Use `languages` instead. Kept for backwards compat. */
     language?: string;
