@@ -15,6 +15,7 @@ module.exports = {
       max_restarts: 10,
       min_uptime: "10s",
       restart_delay: 3000,
+      kill_timeout: 5000,
       // Logging
       out_file: "/opt/gentech-agents/logs/pm2-out.log",
       error_file: "/opt/gentech-agents/logs/pm2-err.log",
