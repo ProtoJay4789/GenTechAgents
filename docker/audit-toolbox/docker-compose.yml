@@ -1,0 +1,11 @@
+version: "3.8"
+
+services:
+  audit-toolbox:
+    build: .
+    image: audit-toolbox:latest
+    volumes:
+      - ./audits:/audits
+    working_dir: /audits
+    stdin_open: true
+    tty: true
