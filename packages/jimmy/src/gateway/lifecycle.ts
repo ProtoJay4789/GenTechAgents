@@ -9,6 +9,14 @@ import { startGateway } from "./server.js";
 import { loadConfig } from "../shared/config.js";
 
 export async function startForeground(config: JinnConfig): Promise<void> {
+  if (process.getuid?.() === 0) {
+    logger.error(
+      "Jinn gateway must not run as root. Claude Code refuses --dangerously-skip-permissions under root/sudo. " +
+        "Run as a non-root user (e.g. sudo -u gentech pm2 start ...).",
+    );
+    process.exit(1);
+  }
+
   const cleanup = await startGateway(config);
 
   let shuttingDown = false;

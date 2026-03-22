@@ -10,6 +10,7 @@ module.exports = {
       args: "start",
       cwd: "/opt/gentech-agents",
       interpreter: "node",
+      user: "gentech",
       env_file: "/opt/gentech-agents/.env",
       // Restart if it crashes, but not in a loop
       max_restarts: 10,
