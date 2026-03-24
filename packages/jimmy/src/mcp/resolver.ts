@@ -55,7 +55,7 @@ export function resolveMcpServers(
 function buildAvailableServers(config: McpGlobalConfig): Record<string, McpServerConfig> {
   const servers: Record<string, McpServerConfig> = {};
 
-  // Browser automation via Playwright
+  // Browser automation
   if (config.browser?.enabled !== false) {
     const provider = config.browser?.provider || "playwright";
     if (provider === "playwright") {
@@ -67,6 +67,11 @@ function buildAvailableServers(config: McpGlobalConfig): Record<string, McpServe
       servers.browser = {
         command: "npx",
         args: ["-y", "@anthropic-ai/mcp-server-puppeteer"],
+      };
+    } else if (provider === "browser-use") {
+      servers.browser = {
+        command: "uvx",
+        args: ["browser-use", "--mcp"],
       };
     }
   }

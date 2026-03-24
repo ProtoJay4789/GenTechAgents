@@ -42,7 +42,7 @@ connectors:
 mcp:
   browser:
     enabled: true
-    provider: playwright   # or "puppeteer"
+    provider: playwright   # or "puppeteer" or "browser-use"
   search:
     enabled: false         # Set to true and add apiKey or set BRAVE_API_KEY env var
     provider: brave

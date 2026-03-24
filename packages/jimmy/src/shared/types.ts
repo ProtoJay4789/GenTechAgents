@@ -230,7 +230,7 @@ export type McpServerConfig = McpServerStdioConfig | McpServerUrlConfig;
 export interface McpGlobalConfig {
   browser?: {
     enabled: boolean;
-    provider?: "playwright" | "puppeteer";
+    provider?: "playwright" | "puppeteer" | "browser-use";
   };
   search?: {
     enabled: boolean;
