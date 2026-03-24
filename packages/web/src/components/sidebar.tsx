@@ -216,7 +216,7 @@ export function Sidebar() {
                   key={inst.port}
                   onClick={() => {
                     if (!inst.current && inst.running) {
-                      window.location.href = `http://localhost:${inst.port}/chat`
+                      window.location.href = `${window.location.protocol}//${window.location.hostname}:${inst.port}/chat`
                     }
                     setShowSwitcher(false)
                   }}
