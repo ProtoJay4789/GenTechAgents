@@ -146,7 +146,7 @@ export async function startGateway(
   if (config.connectors?.discord?.botToken || config.connectors?.discord?.proxyVia) {
     connectorNames.push("discord");
   }
-  if (config.connectors?.telegram?.botToken) {
+  if (config.connectors?.telegram?.botToken || Array.isArray((config.connectors?.telegram as any)?.bots)) {
     connectorNames.push("telegram");
   }
   if (config.connectors?.whatsapp) {
@@ -254,6 +254,34 @@ export async function startGateway(
       connectorMap.set("telegram", telegram);
     } catch (err) {
       logger.error(`Failed to start Telegram connector: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // Multi-bot Telegram support: each bot entry maps to a specific employee
+  const telegramBots = (config.connectors?.telegram as any)?.bots;
+  if (Array.isArray(telegramBots)) {
+    for (const botEntry of telegramBots) {
+      if (!botEntry.botToken) continue;
+      try {
+        const telegram = new TelegramConnector({
+          botToken: botEntry.botToken,
+          allowFrom: config.connectors?.telegram?.allowFrom,
+          ignoreOldMessagesOnBoot: config.connectors?.telegram?.ignoreOldMessagesOnBoot,
+        });
+        const employeeName: string | undefined = botEntry.employee;
+        telegram.onMessage((msg) => {
+          const employee = employeeName ? employeeRegistry.get(employeeName) : undefined;
+          sessionManager.route(msg, telegram, { employee }).catch((err) => {
+            logger.error(`Telegram (${employeeName || "default"}) route error: ${err instanceof Error ? err.message : err}`);
+          });
+        });
+        await telegram.start();
+        connectors.push(telegram);
+        if (!connectorMap.has("telegram")) connectorMap.set("telegram", telegram);
+        logger.info(`Telegram bot started for employee: ${employeeName || "default"}`);
+      } catch (err) {
+        logger.error(`Failed to start Telegram bot ${botEntry.employee || "unknown"}: ${err instanceof Error ? err.message : err}`);
+      }
     }
   }
 
