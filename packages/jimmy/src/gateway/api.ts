@@ -636,6 +636,11 @@ export async function handleApiRequest(
           status: "error",
           lastError: `Engine "${engineName}" not available`,
         });
+        context.emit("session:completed", {
+          sessionId: session.id,
+          result: null,
+          error: `Engine "${engineName}" not available`,
+        });
         return json(res, { ...serializeSession({ ...session, status: "error", lastError: `Engine "${engineName}" not available` }, context) }, 201);
       }
 
@@ -678,7 +683,19 @@ export async function handleApiRequest(
 
       const config = context.getConfig();
       const engine = context.sessionManager.getEngine(session.engine);
-      if (!engine) return serverError(res, `Engine "${session.engine}" not available`);
+      if (!engine) {
+        updateSession(session.id, {
+          status: "error",
+          lastActivity: new Date().toISOString(),
+          lastError: `Engine "${session.engine}" not available`,
+        });
+        context.emit("session:completed", {
+          sessionId: session.id,
+          result: null,
+          error: `Engine "${session.engine}" not available`,
+        });
+        return serverError(res, `Engine "${session.engine}" not available`);
+      }
 
       // Persist the message immediately
       insertMessage(session.id, messageRole, prompt);
