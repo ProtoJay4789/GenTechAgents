@@ -1,5 +1,8 @@
 import TelegramBot from "node-telegram-bot-api";
+import fs from "node:fs";
+import path from "node:path";
 import type {
+  Attachment,
   Connector,
   ConnectorCapabilities,
   ConnectorHealth,
@@ -11,6 +14,8 @@ import type {
 import { deriveSessionKey, buildReplyContext, isOldTelegramMessage } from "./threads.js";
 import { formatResponse } from "./format.js";
 import { logger } from "../../shared/logger.js";
+import { TMP_DIR } from "../../shared/paths.js";
+import { transcribeWithGroq, isGroqAvailable } from "../../stt/groq.js";
 
 export class TelegramConnector implements Connector {
   name = "telegram";
@@ -18,6 +23,7 @@ export class TelegramConnector implements Connector {
   private handler: ((msg: IncomingMessage) => void) | null = null;
   private readonly allowedUsers: Set<number> | null;
   private readonly ignoreOldMessagesOnBoot: boolean;
+  private readonly sttConfig: TelegramConnectorConfig["stt"];
   private readonly bootTimeMs = Date.now();
   private started = false;
   private lastError: string | null = null;
@@ -36,6 +42,7 @@ export class TelegramConnector implements Connector {
       config.allowFrom && config.allowFrom.length > 0
         ? new Set(config.allowFrom.map(Number))
         : null;
+    this.sttConfig = config.stt;
   }
 
   async start(): Promise<void> {
@@ -88,6 +95,89 @@ export class TelegramConnector implements Connector {
       const username =
         telegramMsg.from?.username || telegramMsg.from?.first_name || "unknown";
 
+      // Build text and attachments from media
+      const attachments: Attachment[] = [];
+      let text = telegramMsg.text || telegramMsg.caption || "";
+
+      try {
+        // Voice messages
+        if (telegramMsg.voice) {
+          const fileId = telegramMsg.voice.file_id;
+          const filename = `tg-voice-${telegramMsg.message_id}.ogg`;
+          const localPath = await this.downloadFile(fileId, filename);
+
+          // Attempt Groq STT transcription
+          if (this.sttConfig?.enabled !== false && isGroqAvailable()) {
+            try {
+              const language = this.sttConfig?.languages?.[0] || this.sttConfig?.language;
+              const transcribed = await transcribeWithGroq(localPath, language);
+              if (transcribed) {
+                text = transcribed + (text ? `\n${text}` : "");
+              }
+            } catch (err) {
+              logger.warn(`[telegram] Groq STT transcription failed: ${err instanceof Error ? err.message : err}`);
+            }
+          }
+
+          attachments.push({
+            name: filename,
+            url: localPath,
+            mimeType: telegramMsg.voice.mime_type || "audio/ogg",
+            localPath,
+          });
+        }
+
+        // Audio messages (music files, etc.)
+        if (telegramMsg.audio) {
+          const fileId = telegramMsg.audio.file_id;
+          const originalName = telegramMsg.audio.file_name || `tg-audio-${telegramMsg.message_id}.mp3`;
+          const filename = `tg-audio-${telegramMsg.message_id}-${originalName}`;
+          const localPath = await this.downloadFile(fileId, filename);
+          attachments.push({
+            name: originalName,
+            url: localPath,
+            mimeType: telegramMsg.audio.mime_type || "audio/mpeg",
+            localPath,
+          });
+        }
+
+        // Photo messages (array of sizes, last = largest)
+        if (telegramMsg.photo && telegramMsg.photo.length > 0) {
+          const largest = telegramMsg.photo[telegramMsg.photo.length - 1];
+          const fileId = largest.file_id;
+          const filename = `tg-photo-${telegramMsg.message_id}.jpg`;
+          const localPath = await this.downloadFile(fileId, filename);
+          attachments.push({
+            name: filename,
+            url: localPath,
+            mimeType: "image/jpeg",
+            localPath,
+          });
+        }
+
+        // Document messages
+        if (telegramMsg.document) {
+          const fileId = telegramMsg.document.file_id;
+          const originalName = telegramMsg.document.file_name || `tg-doc-${telegramMsg.message_id}`;
+          const filename = `tg-doc-${telegramMsg.message_id}-${originalName}`;
+          const localPath = await this.downloadFile(fileId, filename);
+          attachments.push({
+            name: originalName,
+            url: localPath,
+            mimeType: telegramMsg.document.mime_type || "application/octet-stream",
+            localPath,
+          });
+        }
+      } catch (err) {
+        logger.warn(`[telegram] Failed to process media: ${err instanceof Error ? err.message : err}`);
+      }
+
+      // Skip messages with no text and no attachments
+      if (!text.trim() && attachments.length === 0) {
+        logger.debug(`[telegram] Skipping message ${telegramMsg.message_id} with no text or media`);
+        return;
+      }
+
       const msg: IncomingMessage = {
         connector: this.name,
         source: "telegram",
@@ -97,8 +187,8 @@ export class TelegramConnector implements Connector {
         channel: String(telegramMsg.chat.id),
         user: username,
         userId: String(userId ?? "unknown"),
-        text: telegramMsg.text || "",
-        attachments: [],
+        text,
+        attachments,
         raw: telegramMsg,
         transportMeta: {
           chatType: telegramMsg.chat.type,
@@ -133,6 +223,17 @@ export class TelegramConnector implements Connector {
       messageTs: replyContext.messageId != null ? String(replyContext.messageId) : undefined,
       replyContext,
     };
+  }
+
+  private async downloadFile(fileId: string, filename: string): Promise<string> {
+    const fileUrl = await this.bot.getFileLink(fileId);
+    const res = await fetch(fileUrl);
+    if (!res.ok) throw new Error(`Failed to download file: ${res.status}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+    fs.mkdirSync(TMP_DIR, { recursive: true });
+    const localPath = path.join(TMP_DIR, filename);
+    fs.writeFileSync(localPath, buffer);
+    return localPath;
   }
 
   private async safeSend(

@@ -243,6 +243,7 @@ export async function startGateway(
         botToken: config.connectors.telegram.botToken,
         allowFrom: config.connectors.telegram.allowFrom,
         ignoreOldMessagesOnBoot: config.connectors.telegram.ignoreOldMessagesOnBoot,
+        stt: config.stt,
       });
       telegram.onMessage((msg) => {
         sessionManager.route(msg, telegram).catch((err) => {
@@ -267,6 +268,7 @@ export async function startGateway(
           botToken: botEntry.botToken,
           allowFrom: config.connectors?.telegram?.allowFrom,
           ignoreOldMessagesOnBoot: config.connectors?.telegram?.ignoreOldMessagesOnBoot,
+          stt: config.stt,
         });
         const employeeName: string | undefined = botEntry.employee;
         telegram.onMessage((msg) => {

@@ -8,6 +8,7 @@ const mockGetMe = vi.fn().mockResolvedValue({ id: 999, username: "test_bot" });
 const mockStartPolling = vi.fn();
 const mockStopPolling = vi.fn().mockResolvedValue(undefined);
 const mockOn = vi.fn();
+const mockGetFileLink = vi.fn().mockResolvedValue("https://api.telegram.org/file/bot123/voice.ogg");
 
 vi.mock("node-telegram-bot-api", () => {
   const MockBot = vi.fn(function (this: any) {
@@ -17,6 +18,7 @@ vi.mock("node-telegram-bot-api", () => {
     this.startPolling = mockStartPolling;
     this.stopPolling = mockStopPolling;
     this.on = mockOn;
+    this.getFileLink = mockGetFileLink;
   });
   return { default: MockBot };
 });
@@ -30,14 +32,52 @@ vi.mock("../../../shared/logger.js", () => ({
   },
 }));
 
+vi.mock("../../../shared/paths.js", () => ({
+  TMP_DIR: "/tmp/test-jinn",
+}));
+
+const mockTranscribeWithGroq = vi.fn().mockResolvedValue("transcribed text");
+const mockIsGroqAvailable = vi.fn().mockReturnValue(true);
+
+vi.mock("../../../stt/groq.js", () => ({
+  transcribeWithGroq: (...args: any[]) => mockTranscribeWithGroq(...args),
+  isGroqAvailable: () => mockIsGroqAvailable(),
+}));
+
+vi.mock("node:fs", () => ({
+  default: {
+    mkdirSync: vi.fn(),
+    writeFileSync: vi.fn(),
+  },
+}));
+
+// Mock global fetch for file downloads
+const mockFetch = vi.fn().mockResolvedValue({
+  ok: true,
+  arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
+});
+vi.stubGlobal("fetch", mockFetch);
+
 // Import after mocks are set up
 const { TelegramConnector } = await import("../index.js");
+
+/** Helper to get the message callback registered via bot.on("message", ...) */
+function getMessageCallback() {
+  return mockOn.mock.calls.find((call) => call[0] === "message")?.[1];
+}
 
 describe("TelegramConnector", () => {
   let connector: InstanceType<typeof TelegramConnector>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetFileLink.mockResolvedValue("https://api.telegram.org/file/bot123/voice.ogg");
+    mockTranscribeWithGroq.mockResolvedValue("transcribed text");
+    mockIsGroqAvailable.mockReturnValue(true);
+    mockFetch.mockResolvedValue({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
+    });
     connector = new TelegramConnector({
       botToken: "123456:ABC-DEF",
     });
@@ -102,10 +142,7 @@ describe("TelegramConnector", () => {
       connector.onMessage(handler);
       await connector.start();
 
-      // Get the registered message callback
-      const messageCallback = mockOn.mock.calls.find(
-        (call) => call[0] === "message",
-      )?.[1];
+      const messageCallback = getMessageCallback();
       expect(messageCallback).toBeDefined();
 
       // Simulate incoming Telegram message
@@ -134,9 +171,7 @@ describe("TelegramConnector", () => {
       connector.onMessage(handler);
       await connector.start();
 
-      const messageCallback = mockOn.mock.calls.find(
-        (call) => call[0] === "message",
-      )?.[1];
+      const messageCallback = getMessageCallback();
 
       const botMsg = {
         message_id: 1,
@@ -159,9 +194,7 @@ describe("TelegramConnector", () => {
       restricted.onMessage(handler);
       await restricted.start();
 
-      const messageCallback = mockOn.mock.calls.find(
-        (call) => call[0] === "message",
-      )?.[1];
+      const messageCallback = getMessageCallback();
 
       // Unauthorized user
       const msg = {
@@ -184,9 +217,7 @@ describe("TelegramConnector", () => {
       restricted.onMessage(handler);
       await restricted.start();
 
-      const messageCallback = mockOn.mock.calls.find(
-        (call) => call[0] === "message",
-      )?.[1];
+      const messageCallback = getMessageCallback();
 
       // Channel post or forwarded message with no `from`
       const msg = {
@@ -208,9 +239,7 @@ describe("TelegramConnector", () => {
       restricted.onMessage(handler);
       await restricted.start();
 
-      const messageCallback = mockOn.mock.calls.find(
-        (call) => call[0] === "message",
-      )?.[1];
+      const messageCallback = getMessageCallback();
 
       const msg = {
         message_id: 1,
@@ -221,6 +250,230 @@ describe("TelegramConnector", () => {
       };
       await messageCallback(msg);
       expect(handler).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe("voice messages", () => {
+    it("downloads and transcribes voice messages with Groq", async () => {
+      const sttConnector = new TelegramConnector({
+        botToken: "123456:ABC-DEF",
+        stt: { enabled: true, languages: ["en"] },
+      });
+      const handler = vi.fn();
+      sttConnector.onMessage(handler);
+      await sttConnector.start();
+
+      const messageCallback = getMessageCallback();
+
+      const voiceMsg = {
+        message_id: 50,
+        chat: { id: 12345, type: "private" as const },
+        from: { id: 67890, username: "testuser", first_name: "Test", is_bot: false },
+        date: Math.floor(Date.now() / 1000) + 10,
+        voice: { file_id: "voice_file_123", duration: 5, mime_type: "audio/ogg" },
+      };
+      await messageCallback(voiceMsg);
+
+      expect(mockGetFileLink).toHaveBeenCalledWith("voice_file_123");
+      expect(mockTranscribeWithGroq).toHaveBeenCalled();
+      expect(handler).toHaveBeenCalledOnce();
+
+      const msg: IncomingMessage = handler.mock.calls[0][0];
+      expect(msg.text).toBe("transcribed text");
+      expect(msg.attachments).toHaveLength(1);
+      expect(msg.attachments[0].mimeType).toBe("audio/ogg");
+      expect(msg.attachments[0].name).toContain("tg-voice-");
+    });
+
+    it("attaches voice file even when STT is unavailable", async () => {
+      mockIsGroqAvailable.mockReturnValue(false);
+
+      const handler = vi.fn();
+      connector.onMessage(handler);
+      await connector.start();
+
+      const messageCallback = getMessageCallback();
+
+      const voiceMsg = {
+        message_id: 50,
+        chat: { id: 12345, type: "private" as const },
+        from: { id: 67890, username: "testuser", first_name: "Test", is_bot: false },
+        date: Math.floor(Date.now() / 1000) + 10,
+        voice: { file_id: "voice_file_123", duration: 5, mime_type: "audio/ogg" },
+      };
+      await messageCallback(voiceMsg);
+
+      expect(mockTranscribeWithGroq).not.toHaveBeenCalled();
+      expect(handler).toHaveBeenCalledOnce();
+
+      const msg: IncomingMessage = handler.mock.calls[0][0];
+      expect(msg.attachments).toHaveLength(1);
+      expect(msg.attachments[0].mimeType).toBe("audio/ogg");
+    });
+
+    it("continues with attachment when STT transcription fails", async () => {
+      mockTranscribeWithGroq.mockRejectedValueOnce(new Error("API error"));
+
+      const sttConnector = new TelegramConnector({
+        botToken: "123456:ABC-DEF",
+        stt: { enabled: true },
+      });
+      const handler = vi.fn();
+      sttConnector.onMessage(handler);
+      await sttConnector.start();
+
+      const messageCallback = getMessageCallback();
+
+      const voiceMsg = {
+        message_id: 50,
+        chat: { id: 12345, type: "private" as const },
+        from: { id: 67890, username: "testuser", first_name: "Test", is_bot: false },
+        date: Math.floor(Date.now() / 1000) + 10,
+        voice: { file_id: "voice_file_123", duration: 5, mime_type: "audio/ogg" },
+      };
+      await messageCallback(voiceMsg);
+
+      expect(handler).toHaveBeenCalledOnce();
+      const msg: IncomingMessage = handler.mock.calls[0][0];
+      expect(msg.text).toBe("");
+      expect(msg.attachments).toHaveLength(1);
+    });
+  });
+
+  describe("photo messages", () => {
+    it("downloads and attaches photos with caption as text", async () => {
+      const handler = vi.fn();
+      connector.onMessage(handler);
+      await connector.start();
+
+      const messageCallback = getMessageCallback();
+
+      const photoMsg = {
+        message_id: 60,
+        chat: { id: 12345, type: "private" as const },
+        from: { id: 67890, username: "testuser", first_name: "Test", is_bot: false },
+        date: Math.floor(Date.now() / 1000) + 10,
+        caption: "Check this out",
+        photo: [
+          { file_id: "small_photo", width: 90, height: 90 },
+          { file_id: "medium_photo", width: 320, height: 320 },
+          { file_id: "large_photo", width: 800, height: 800 },
+        ],
+      };
+      await messageCallback(photoMsg);
+
+      // Should download the largest photo (last in array)
+      expect(mockGetFileLink).toHaveBeenCalledWith("large_photo");
+      expect(handler).toHaveBeenCalledOnce();
+
+      const msg: IncomingMessage = handler.mock.calls[0][0];
+      expect(msg.text).toBe("Check this out");
+      expect(msg.attachments).toHaveLength(1);
+      expect(msg.attachments[0].mimeType).toBe("image/jpeg");
+      expect(msg.attachments[0].name).toContain("tg-photo-");
+    });
+
+    it("handles photos without caption", async () => {
+      const handler = vi.fn();
+      connector.onMessage(handler);
+      await connector.start();
+
+      const messageCallback = getMessageCallback();
+
+      const photoMsg = {
+        message_id: 61,
+        chat: { id: 12345, type: "private" as const },
+        from: { id: 67890, username: "testuser", first_name: "Test", is_bot: false },
+        date: Math.floor(Date.now() / 1000) + 10,
+        photo: [
+          { file_id: "photo_id", width: 800, height: 800 },
+        ],
+      };
+      await messageCallback(photoMsg);
+
+      expect(handler).toHaveBeenCalledOnce();
+      const msg: IncomingMessage = handler.mock.calls[0][0];
+      expect(msg.text).toBe("");
+      expect(msg.attachments).toHaveLength(1);
+    });
+  });
+
+  describe("document messages", () => {
+    it("downloads and attaches documents", async () => {
+      const handler = vi.fn();
+      connector.onMessage(handler);
+      await connector.start();
+
+      const messageCallback = getMessageCallback();
+
+      const docMsg = {
+        message_id: 70,
+        chat: { id: 12345, type: "private" as const },
+        from: { id: 67890, username: "testuser", first_name: "Test", is_bot: false },
+        date: Math.floor(Date.now() / 1000) + 10,
+        caption: "Here is the report",
+        document: {
+          file_id: "doc_file_123",
+          file_name: "report.pdf",
+          mime_type: "application/pdf",
+        },
+      };
+      await messageCallback(docMsg);
+
+      expect(mockGetFileLink).toHaveBeenCalledWith("doc_file_123");
+      expect(handler).toHaveBeenCalledOnce();
+
+      const msg: IncomingMessage = handler.mock.calls[0][0];
+      expect(msg.text).toBe("Here is the report");
+      expect(msg.attachments).toHaveLength(1);
+      expect(msg.attachments[0].name).toBe("report.pdf");
+      expect(msg.attachments[0].mimeType).toBe("application/pdf");
+    });
+  });
+
+  describe("media error handling", () => {
+    it("skips messages with no text and no media", async () => {
+      const handler = vi.fn();
+      connector.onMessage(handler);
+      await connector.start();
+
+      const messageCallback = getMessageCallback();
+
+      const emptyMsg = {
+        message_id: 80,
+        chat: { id: 12345, type: "private" as const },
+        from: { id: 67890, username: "testuser", first_name: "Test", is_bot: false },
+        date: Math.floor(Date.now() / 1000) + 10,
+      };
+      await messageCallback(emptyMsg);
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("handles download failure gracefully", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+
+      const handler = vi.fn();
+      connector.onMessage(handler);
+      await connector.start();
+
+      const messageCallback = getMessageCallback();
+
+      const photoMsg = {
+        message_id: 90,
+        chat: { id: 12345, type: "private" as const },
+        from: { id: 67890, username: "testuser", first_name: "Test", is_bot: false },
+        date: Math.floor(Date.now() / 1000) + 10,
+        caption: "A photo",
+        photo: [{ file_id: "photo_id", width: 800, height: 800 }],
+      };
+      await messageCallback(photoMsg);
+
+      // Should still call handler with the caption text even though download failed
+      expect(handler).toHaveBeenCalledOnce();
+      const msg: IncomingMessage = handler.mock.calls[0][0];
+      expect(msg.text).toBe("A photo");
+      expect(msg.attachments).toHaveLength(0);
     });
   });
 
