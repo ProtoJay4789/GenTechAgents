@@ -20,10 +20,12 @@ export async function transcribeWithGroq(
 
   const filename = path.basename(audioPath);
   const fileBuffer = fs.readFileSync(audioPath);
-  const blob = new Blob([fileBuffer]);
+
+  // Use File constructor for reliable filename handling across Node.js versions
+  const file = new File([fileBuffer], filename, { type: "audio/ogg" });
 
   const form = new FormData();
-  form.append("file", blob, filename);
+  form.append("file", file);
   form.append("model", GROQ_MODEL);
   if (language) {
     form.append("language", language);
