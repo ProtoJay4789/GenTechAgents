@@ -34,7 +34,7 @@ export class TelegramConnector implements Connector {
     this.ignoreOldMessagesOnBoot = config.ignoreOldMessagesOnBoot !== false;
     this.allowedUsers =
       config.allowFrom && config.allowFrom.length > 0
-        ? new Set(config.allowFrom)
+        ? new Set(config.allowFrom.map(Number))
         : null;
   }
 
