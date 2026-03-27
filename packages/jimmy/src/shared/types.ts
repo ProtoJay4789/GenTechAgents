@@ -289,6 +289,12 @@ export interface TelegramConnectorConfig {
   botToken: string;
   allowFrom?: number[];
   ignoreOldMessagesOnBoot?: boolean;
+  stt?: {
+    enabled?: boolean;
+    model?: string;
+    language?: string;
+    languages?: string[];
+  };
 }
 
 export interface WhatsAppConnectorConfig {
