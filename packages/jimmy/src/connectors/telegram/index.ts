@@ -130,7 +130,7 @@ export class TelegramConnector implements Connector {
         // Audio messages (music files, etc.)
         if (telegramMsg.audio) {
           const fileId = telegramMsg.audio.file_id;
-          const originalName = telegramMsg.audio.file_name || `tg-audio-${telegramMsg.message_id}.mp3`;
+          const originalName = telegramMsg.audio.title || `tg-audio-${telegramMsg.message_id}.mp3`;
           const filename = `tg-audio-${telegramMsg.message_id}-${originalName}`;
           const localPath = await this.downloadFile(fileId, filename);
           attachments.push({
