@@ -53,6 +53,12 @@ cron:
   # alertConnector: slack
   # alertChannel: "#alerts"
 
+# CoinMarketCap configuration for cryptocurrency price tracking
+# Get your free API key at: https://pro.coinmarketcap.com/
+coinmarketcap:
+  enabled: false          # Set to true to enable cryptocurrency price fetching
+  # apiKey: ${COINMARKETCAP_API_KEY}  # Set COINMARKETCAP_API_KEY environment variable
+
 portal:
   language: English
 

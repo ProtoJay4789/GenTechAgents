@@ -11,6 +11,11 @@
  */
 
 import { createInterface } from "node:readline";
+import {
+  fetchCoinPrices,
+  formatCoinData,
+  isCoinMarketCapAvailable,
+} from "../coinmarketcap/client.js";
 
 const GATEWAY_URL = process.env.JINN_GATEWAY_URL || "http://127.0.0.1:7777";
 
@@ -184,6 +189,24 @@ const TOOLS = [
       required: ["jobId"],
     },
   },
+  {
+    name: "get_crypto_prices",
+    description: "Fetch current cryptocurrency prices from CoinMarketCap for specified coins or a watchlist.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        symbols: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of coin symbols (e.g., ['BTC', 'ETH', 'XRP']). If empty, fetches default major coins.",
+        },
+        watchlistId: {
+          type: "string",
+          description: "Optional CoinMarketCap watchlist ID to fetch. If provided with symbols, symbols take precedence.",
+        },
+      },
+    },
+  },
 ];
 
 // ─── API Helpers ───
@@ -314,6 +337,57 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
         ...(args.prompt ? { prompt: args.prompt } : {}),
       });
       return JSON.stringify(result);
+    }
+
+    case "get_crypto_prices": {
+      if (!isCoinMarketCapAvailable()) {
+        return JSON.stringify({
+          error: "CoinMarketCap API is not configured. Set COINMARKETCAP_API_KEY environment variable.",
+        });
+      }
+
+      try {
+        const symbols = (args.symbols as string[]) || [];
+
+        if (symbols.length === 0) {
+          return JSON.stringify({
+            error: "Please provide at least one coin symbol (e.g., ['BTC', 'ETH'])",
+          });
+        }
+
+        const coins = await fetchCoinPrices(symbols);
+
+        if (coins.length === 0) {
+          return JSON.stringify({
+            error: `No data found for symbols: ${symbols.join(", ")}`,
+          });
+        }
+
+        const formattedData = coins.map((coin) => ({
+          symbol: coin.symbol,
+          name: coin.name,
+          price: parseFloat(coin.quote.USD.price.toFixed(2)),
+          marketCap: parseFloat(
+            (coin.quote.USD.market_cap || 0).toFixed(0),
+          ),
+          change24h: parseFloat(
+            coin.quote.USD.percent_change_24h.toFixed(2),
+          ),
+          change7d: parseFloat(coin.quote.USD.percent_change_7d.toFixed(2)),
+        }));
+
+        return JSON.stringify({
+          success: true,
+          coins: formattedData,
+          formatted: formatCoinData(coins),
+        });
+      } catch (error) {
+        const errorMsg =
+          error instanceof Error ? error.message : String(error);
+        return JSON.stringify({
+          error: `Failed to fetch cryptocurrency prices: ${errorMsg}`,
+        });
+      }
     }
 
     default:
