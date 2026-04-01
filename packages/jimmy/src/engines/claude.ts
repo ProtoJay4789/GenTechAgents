@@ -570,6 +570,10 @@ export class ClaudeEngine implements InterruptibleEngine {
       if (k === "CLAUDECODE" || k.startsWith("CLAUDE_CODE_")) continue;
       if (v !== undefined) cleanEnv[k] = v;
     }
+    // Allow --dangerously-skip-permissions when running as root (e.g. server deployments)
+    if (process.getuid?.() === 0) {
+      cleanEnv.CLAUDE_CODE_BUBBLEWRAP = "1";
+    }
     return cleanEnv;
   }
 
