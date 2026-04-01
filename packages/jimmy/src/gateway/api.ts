@@ -329,6 +329,7 @@ export async function handleApiRequest(
           claude: { model: config.engines.claude.model, available: true },
           codex: { model: config.engines.codex.model, available: true },
           ...(config.engines.gemini ? { gemini: { model: config.engines.gemini.model, available: true } } : {}),
+          ...(config.engines.qwen ? { qwen: { model: config.engines.qwen.model || "qwen-plus", available: !!process.env.QWEN_API_KEY } } : {}),
         },
         sessions: { total: sessions.length, running, active: running },
         connectors,
@@ -1922,7 +1923,9 @@ async function runWebSession(
       ? config.engines.codex
       : currentSession.engine === "gemini"
         ? config.engines.gemini ?? config.engines.claude
-        : config.engines.claude;
+        : currentSession.engine === "qwen"
+          ? config.engines.qwen ?? config.engines.claude
+          : config.engines.claude;
     const effortLevel = resolveEffort(engineConfig, currentSession, employee);
 
     // Budget enforcement — check BEFORE engine.run()

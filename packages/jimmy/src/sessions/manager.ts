@@ -255,7 +255,9 @@ export class SessionManager {
         ? this.config.engines.codex
         : session.engine === "gemini"
           ? this.config.engines.gemini ?? this.config.engines.claude
-          : this.config.engines.claude;
+          : session.engine === "qwen"
+            ? this.config.engines.qwen ?? this.config.engines.claude
+            : this.config.engines.claude;
       if (session.engine === "claude") {
         const mcpConfig = resolveMcpServers(this.config.mcp, employee);
         if (Object.keys(mcpConfig.mcpServers).length > 0) {
@@ -810,6 +812,7 @@ export class SessionManager {
         `Claude: ${this.config.engines.claude.model}`,
         `Codex: ${this.config.engines.codex.model}`,
         ...(this.config.engines.gemini ? [`Gemini: ${this.config.engines.gemini.model}`] : []),
+        ...(this.config.engines.qwen ? [`Qwen: ${this.config.engines.qwen.model || "qwen-plus"}`] : []),
         "Connectors:",
         ...connectorLines,
       ].join("\n");

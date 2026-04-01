@@ -310,6 +310,9 @@ function buildConfigContext(config: JinnConfig, gatewayUrl: string): string {
   if (config.engines.gemini?.model) {
     lines.push(`- Gemini model: ${config.engines.gemini.model}`);
   }
+  if (config.engines.qwen?.model) {
+    lines.push(`- Qwen model: ${config.engines.qwen.model}`);
+  }
   if (config.logging) {
     lines.push(`- Log level: ${config.logging.level || "info"}`);
   }
