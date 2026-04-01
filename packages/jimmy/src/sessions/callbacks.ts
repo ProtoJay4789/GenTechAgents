@@ -61,7 +61,9 @@ async function _sendNotification(
 ): Promise<void> {
   const parent = getSession(childSession.parentSessionId!);
   if (!parent) return; // Parent gone or expired
-  if (parent.status === "error") return; // Parent already in error — skip
+  if (parent.status === "error") {
+    logger.warn(`[callbacks] Parent session ${parent.id} is in error state — attempting notification anyway`);
+  }
 
   const employeeName = childSession.employee || "Unknown";
   const childId = childSession.id;
@@ -124,9 +126,14 @@ async function _sendRaw(parentSessionId: string, message: string): Promise<void>
     // Use default port if config is unavailable
   }
 
-  await fetch(`http://127.0.0.1:${port}/api/sessions/${parentSessionId}/message`, {
+  const response = await fetch(`http://127.0.0.1:${port}/api/sessions/${parentSessionId}/message`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message, role: "notification" }),
   });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "(unreadable)");
+    throw new Error(`HTTP ${response.status} notifying parent ${parentSessionId}: ${body}`);
+  }
 }

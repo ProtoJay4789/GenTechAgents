@@ -329,6 +329,7 @@ export async function handleApiRequest(
           claude: { model: config.engines.claude.model, available: true },
           codex: { model: config.engines.codex.model, available: true },
           ...(config.engines.gemini ? { gemini: { model: config.engines.gemini.model, available: true } } : {}),
+          ...(config.engines.qwen ? { qwen: { model: config.engines.qwen.model || "qwen-plus", available: !!process.env.QWEN_API_KEY } } : {}),
         },
         sessions: { total: sessions.length, running, active: running },
         connectors,
@@ -1851,6 +1852,26 @@ function loadTranscriptMessages(engineSessionId: string): Array<{ role: string; 
   return [];
 }
 
+async function deliverToConnector(
+  session: Session,
+  text: string,
+  connectors: Map<string, import("../shared/types.js").Connector>,
+): Promise<void> {
+  if (!session.connector || session.connector === "web") return;
+  if (!session.replyContext) return;
+  const connector = connectors.get(session.connector);
+  if (!connector) {
+    logger.warn(`[api] Connector "${session.connector}" not found for session ${session.id} — skipping connector delivery`);
+    return;
+  }
+  try {
+    const target = connector.reconstructTarget(session.replyContext);
+    await connector.replyMessage(target, text);
+  } catch (err) {
+    logger.warn(`[api] Failed to deliver via ${session.connector} for session ${session.id}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 async function runWebSession(
   session: Session,
   prompt: string,
@@ -1902,7 +1923,9 @@ async function runWebSession(
       ? config.engines.codex
       : currentSession.engine === "gemini"
         ? config.engines.gemini ?? config.engines.claude
-        : config.engines.claude;
+        : currentSession.engine === "qwen"
+          ? config.engines.qwen ?? config.engines.claude
+          : config.engines.claude;
     const effortLevel = resolveEffort(engineConfig, currentSession, employee);
 
     // Budget enforcement — check BEFORE engine.run()
@@ -2095,6 +2118,7 @@ async function runWebSession(
 
           if (fallbackResult.result) {
             insertMessage(currentSession.id, "assistant", fallbackResult.result);
+            await deliverToConnector(currentSession, fallbackResult.result, context.connectors);
           }
 
           // Persist Codex thread id so future fallbacks can resume it
@@ -2247,6 +2271,7 @@ async function runWebSession(
           // Usage limit cleared — handle result
           if (retryResult.result) {
             insertMessage(currentSession.id, "assistant", retryResult.result);
+            await deliverToConnector(currentSession, retryResult.result, context.connectors);
           }
 
           const completedAfterRetry = updateSession(currentSession.id, {
@@ -2305,6 +2330,7 @@ async function runWebSession(
     // Persist the assistant response
     if (result.result) {
       insertMessage(currentSession.id, "assistant", result.result);
+      await deliverToConnector(currentSession, result.result, context.connectors);
     }
 
     const completedSession = updateSession(currentSession.id, {
@@ -2354,6 +2380,7 @@ async function runWebSession(
     if (erroredSession) {
       notifyParentSession(erroredSession, { error: errMsg }, { alwaysNotify: employee?.alwaysNotify });
     }
+    await deliverToConnector(currentSession, `Error: ${errMsg}`, context.connectors);
     context.emit("session:completed", {
       sessionId: currentSession.id,
       result: null,

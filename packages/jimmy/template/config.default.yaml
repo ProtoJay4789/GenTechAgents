@@ -15,6 +15,11 @@ engines:
     bin: codex
     model: gpt-5.4
     effortLevel: high
+  # Qwen via DashScope API — free alternative when Claude hits usage limits.
+  # Set QWEN_API_KEY in ~/.jinn/.env to enable.
+  # Use as fallback: sessions.rateLimitStrategy: fallback + sessions.fallbackEngine: qwen
+  # qwen:
+  #   model: qwen-plus   # or qwen-max, qwen3.5-plus
 
 connectors:
   slack:
@@ -47,6 +52,9 @@ mcp:
 sessions:
   maxDurationMinutes: 30
   maxCostUsd: 10.00
+  # When Claude hits usage limits, switch to a fallback engine automatically:
+  # rateLimitStrategy: fallback
+  # fallbackEngine: qwen   # requires qwen engine configured above with QWEN_API_KEY
 
 # Cron configuration
 cron:

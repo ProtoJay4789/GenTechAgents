@@ -202,3 +202,58 @@ describe("notifyParentSession — alwaysNotify suppression", () => {
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
 });
+
+describe("notifyParentSession — parent in error state", () => {
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    globalThis.fetch = originalFetch as typeof fetch;
+  });
+
+  it("still sends notification when parent session is in error state", async () => {
+    vi.mocked(getSession).mockReturnValue(
+      makeSession({ id: "parent-001", parentSessionId: null, status: "error" }),
+    );
+
+    const child = makeSession();
+    notifyParentSession(child, { result: "done" });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe("notifyParentSession — HTTP error handling", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    globalThis.fetch = originalFetch as typeof fetch;
+  });
+
+  it("logs warning when HTTP response is non-2xx", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve("Not Found"),
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+    vi.mocked(getSession).mockReturnValue(
+      makeSession({ id: "parent-001", parentSessionId: null, status: "idle" }),
+    );
+
+    const { logger } = await import("../../shared/logger.js");
+    const child = makeSession();
+    notifyParentSession(child, { result: "done" });
+    await new Promise((r) => setTimeout(r, 150));
+
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to notify parent session"),
+    );
+  });
+});
