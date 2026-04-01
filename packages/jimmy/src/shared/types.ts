@@ -259,8 +259,28 @@ export interface McpGlobalConfig {
   gateway?: {
     enabled: boolean;
   };
+  /** Google Workspace CLI — access Drive, Gmail, Calendar, Sheets, etc. */
+  google?: {
+    enabled: boolean;
+    clientId?: string;
+    clientSecret?: string;
+  };
+  /** Agent-Reach — internet access tools (web, YouTube, Twitter, Reddit, RSS, etc.) */
+  agentReach?: {
+    enabled: boolean;
+    /** Path to agent-reach venv (default: ~/.agent-reach-venv) */
+    venvPath?: string;
+  };
   /** Custom MCP servers defined by the user */
   custom?: Record<string, (McpServerStdioConfig | McpServerUrlConfig) & { enabled?: boolean }>;
+}
+
+export interface PaperclipConfig {
+  enabled: boolean;
+  /** Paperclip dashboard URL (default: http://127.0.0.1:3100) */
+  url: string;
+  /** How often to push session/cost data, in seconds (default: 60) */
+  syncInterval?: number;
 }
 
 export interface WebConnectorConfig {}
@@ -361,6 +381,9 @@ export interface JinnConfig {
     /** @deprecated Use `languages` instead. Kept for backwards compat. */
     language?: string;
     languages?: string[];
+  };
+  integrations?: {
+    paperclip?: PaperclipConfig;
   };
   remotes?: Record<string, { url: string; label?: string }>;
 }

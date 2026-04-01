@@ -40,6 +40,13 @@ mcp:
     enabled: true
   gateway:
     enabled: true          # Built-in MCP server for messaging, org, cron, sessions
+  google:
+    enabled: false          # Set to true after running: gws auth login
+    # clientId: ${GOOGLE_CLIENT_ID}
+    # clientSecret: ${GOOGLE_CLIENT_SECRET}
+  agent-reach:
+    enabled: false          # Set to true after running: agent-reach install --env=auto
+    # venvPath: ~/.agent-reach-venv
   # custom:
   #   my-server:
   #     enabled: true
@@ -66,6 +73,13 @@ cron:
 coinmarketcap:
   enabled: false          # Set to true to enable cryptocurrency price fetching
   # apiKey: ${COINMARKETCAP_API_KEY}  # Set COINMARKETCAP_API_KEY environment variable
+
+# External integrations
+integrations:
+  paperclip:
+    enabled: true           # Paperclip dashboard for agent orchestration & monitoring
+    url: "http://127.0.0.1:3100"
+    syncInterval: 60        # Push session/cost data every N seconds
 
 portal:
   language: English

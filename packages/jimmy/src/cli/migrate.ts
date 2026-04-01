@@ -152,7 +152,9 @@ export async function runMigrate(opts: { check?: boolean; auto?: boolean }): Pro
   console.log(`\nLaunching AI to apply ${pending.length} migration(s)...\n`);
 
   const config = loadConfig();
-  const engineConfig = config.engines[config.engines.default] ?? config.engines.claude;
+  // Migrations require a CLI-based engine (claude/codex/gemini) — fall back to claude if default is API-only (e.g. qwen)
+  const defaultEngine = config.engines[config.engines.default];
+  const engineConfig = (defaultEngine && "bin" in defaultEngine) ? defaultEngine : config.engines.claude;
 
   try {
     const prompt = [
