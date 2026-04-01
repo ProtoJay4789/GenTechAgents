@@ -1,180 +1,196 @@
-import { randomUUID } from "node:crypto";
-import type { Engine, EngineRunOpts, EngineResult, StreamDelta } from "../shared/types.js";
+import type { InterruptibleEngine, EngineRunOpts, EngineResult } from "../shared/types.js";
 import { logger } from "../shared/logger.js";
 
-/**
- * Qwen engine — calls the DashScope OpenAI-compatible API directly.
- * No CLI wrapper needed; uses fetch against the HTTP API.
- *
- * Supports streaming via SSE and non-streaming via JSON response.
- * Requires QWEN_API_KEY environment variable.
- */
-export class QwenEngine implements Engine {
-  name = "qwen" as const;
+const DEFAULT_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+const DEFAULT_MODEL = "qwen-plus";
 
-  private readonly baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+interface ActiveRequest {
+  abort: AbortController;
+  terminationReason: string | null;
+}
+
+/**
+ * Qwen engine — calls Alibaba DashScope's OpenAI-compatible API.
+ *
+ * Setup:
+ *   Set QWEN_API_KEY in ~/.jinn/.env (or environment).
+ *   Optionally set QWEN_BASE_URL to use a different region:
+ *     - International: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+ *     - China:         https://dashscope.aliyuncs.com/compatible-mode/v1
+ *     - US (Virginia): https://dashscope-us.aliyuncs.com/compatible-mode/v1
+ *
+ * Config (config.yaml):
+ *   engines:
+ *     qwen:
+ *       model: qwen-plus    # or qwen-max, qwen3.5-plus, etc.
+ */
+export class QwenEngine implements InterruptibleEngine {
+  name = "qwen" as const;
+  private activeRequests = new Map<string, ActiveRequest>();
+
+  kill(sessionId: string, reason = "Interrupted"): void {
+    const req = this.activeRequests.get(sessionId);
+    if (!req) return;
+    req.terminationReason = reason;
+    logger.info(`Aborting Qwen request for session ${sessionId}: ${reason}`);
+    req.abort.abort();
+  }
+
+  killAll(): void {
+    for (const sessionId of this.activeRequests.keys()) {
+      this.kill(sessionId, "Interrupted: gateway shutting down");
+    }
+  }
+
+  isAlive(sessionId: string): boolean {
+    return this.activeRequests.has(sessionId);
+  }
 
   async run(opts: EngineRunOpts): Promise<EngineResult> {
+    const start = Date.now();
+    const sessionId = opts.sessionId || `qwen-${Date.now()}`;
+    const abort = new AbortController();
+    this.activeRequests.set(sessionId, { abort, terminationReason: null });
+
     const apiKey = process.env.QWEN_API_KEY;
     if (!apiKey) {
+      this.activeRequests.delete(sessionId);
       return {
-        sessionId: "",
+        sessionId,
         result: "",
-        error: "QWEN_API_KEY not set. Add it to ~/.jinn/.env",
+        error: "QWEN_API_KEY environment variable is not set. Add it to ~/.jinn/.env",
+        durationMs: Date.now() - start,
       };
     }
 
-    const model = opts.model || "qwen-plus";
-    const sessionId = opts.sessionId || `qwen-${randomUUID().slice(0, 8)}`;
-    const streaming = !!opts.onStream;
-
-    let prompt = opts.prompt;
-    if (opts.attachments?.length) {
-      prompt += "\n\nAttached files:\n" + opts.attachments.map((a) => `- ${a}`).join("\n");
-    }
+    const baseUrl = (process.env.QWEN_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, "");
+    const model = opts.model || DEFAULT_MODEL;
+    const effortLevel = opts.effortLevel || "medium";
 
     const messages: { role: string; content: string }[] = [];
     if (opts.systemPrompt) {
       messages.push({ role: "system", content: opts.systemPrompt });
     }
-    messages.push({ role: "user", content: prompt });
 
-    const startTime = Date.now();
+    let userContent = opts.prompt;
+    if (opts.attachments?.length) {
+      userContent += "\n\nAttached files:\n" + opts.attachments.map((a) => `- ${a}`).join("\n");
+    }
+    messages.push({ role: "user", content: userContent });
+
+    // Enable extended thinking for high effort — Qwen3.5 supports enable_thinking
+    const enableThinking = effortLevel === "high";
+
+    const requestBody: Record<string, unknown> = {
+      model,
+      messages,
+      stream: true,
+    };
+    if (enableThinking) {
+      requestBody.enable_thinking = true;
+    }
 
     logger.info(
-      `Qwen engine starting: model=${model} streaming=${streaming} (session: ${sessionId})`,
+      `Qwen engine starting: model=${model} effort=${effortLevel} thinking=${enableThinking} session=${sessionId}`,
     );
 
     try {
-      if (streaming && opts.onStream) {
-        return await this.runStreaming(apiKey, model, messages, sessionId, startTime, opts.onStream);
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+        },
+        body: JSON.stringify(requestBody),
+        signal: abort.signal,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => "(unreadable)");
+        const errMsg = `Qwen API error ${response.status}: ${errText}`;
+        logger.error(`[qwen] ${errMsg}`);
+        this.activeRequests.delete(sessionId);
+        return { sessionId, result: "", error: errMsg, durationMs: Date.now() - start };
       }
-      return await this.runNonStreaming(apiKey, model, messages, sessionId, startTime);
-    } catch (err) {
-      const durationMs = Date.now() - startTime;
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      logger.error(`Qwen engine error: ${errorMsg}`);
-      return {
-        sessionId,
-        result: "",
-        error: errorMsg,
-        durationMs,
-      };
-    }
-  }
 
-  private async runNonStreaming(
-    apiKey: string,
-    model: string,
-    messages: { role: string; content: string }[],
-    sessionId: string,
-    startTime: number,
-  ): Promise<EngineResult> {
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ model, messages, stream: false }),
-    });
+      let result = "";
+      const onStream = opts.onStream ?? null;
 
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Qwen API ${res.status}: ${body}`);
-    }
-
-    const data = (await res.json()) as {
-      choices: { message: { content: string } }[];
-      usage?: { total_tokens?: number; prompt_tokens?: number; completion_tokens?: number };
-    };
-
-    const result = data.choices?.[0]?.message?.content || "";
-    const durationMs = Date.now() - startTime;
-
-    // Estimate cost (Qwen Plus: ~$0.0008/1K input, $0.002/1K output)
-    const usage = data.usage;
-    let cost: number | undefined;
-    if (usage?.prompt_tokens && usage?.completion_tokens) {
-      cost = (usage.prompt_tokens * 0.0008 + usage.completion_tokens * 0.002) / 1000;
-    }
-
-    logger.info(`Qwen engine completed in ${durationMs}ms (model: ${model})`);
-
-    return {
-      sessionId,
-      result,
-      cost,
-      durationMs,
-      numTurns: 1,
-    };
-  }
-
-  private async runStreaming(
-    apiKey: string,
-    model: string,
-    messages: { role: string; content: string }[],
-    sessionId: string,
-    startTime: number,
-    onStream: (delta: StreamDelta) => void,
-  ): Promise<EngineResult> {
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ model, messages, stream: true }),
-    });
-
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Qwen API ${res.status}: ${body}`);
-    }
-
-    let fullResult = "";
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error("No response body");
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const payload = line.slice(6).trim();
-        if (payload === "[DONE]") continue;
+      if (response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
 
         try {
-          const chunk = JSON.parse(payload) as {
-            choices: { delta: { content?: string } }[];
-          };
-          const content = chunk.choices?.[0]?.delta?.content;
-          if (content) {
-            fullResult += content;
-            onStream({ type: "text", content });
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split("\n");
+            buf = lines.pop() ?? "";
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed === "data: [DONE]") continue;
+              if (!trimmed.startsWith("data: ")) continue;
+
+              try {
+                const json = JSON.parse(trimmed.slice(6)) as Record<string, unknown>;
+                const choices = json.choices as Array<Record<string, unknown>> | undefined;
+                const delta = choices?.[0]?.delta as Record<string, unknown> | undefined;
+                if (!delta) continue;
+
+                // Main text content
+                if (typeof delta.content === "string" && delta.content) {
+                  result += delta.content;
+                  onStream?.({ type: "text", content: delta.content });
+                }
+
+                // Extended thinking / reasoning tokens (Qwen3.5)
+                if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
+                  onStream?.({ type: "status", content: delta.reasoning_content });
+                }
+              } catch {
+                // Skip unparseable SSE lines
+              }
+            }
           }
-        } catch {
-          // skip malformed chunks
+        } finally {
+          reader.releaseLock();
         }
       }
+
+      const terminationReason = this.activeRequests.get(sessionId)?.terminationReason ?? null;
+      this.activeRequests.delete(sessionId);
+      const durationMs = Date.now() - start;
+
+      logger.info(`Qwen engine completed session ${sessionId} in ${durationMs}ms`);
+
+      return {
+        sessionId,
+        result,
+        durationMs,
+        error: terminationReason ?? undefined,
+      };
+    } catch (err) {
+      const terminationReason = this.activeRequests.get(sessionId)?.terminationReason ?? null;
+      this.activeRequests.delete(sessionId);
+      const durationMs = Date.now() - start;
+
+      if (err instanceof Error && err.name === "AbortError") {
+        return {
+          sessionId,
+          result: "",
+          error: terminationReason || "Interrupted",
+          durationMs,
+        };
+      }
+
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.error(`Qwen engine error for session ${sessionId}: ${errMsg}`);
+      return { sessionId, result: "", error: errMsg, durationMs };
     }
-
-    const durationMs = Date.now() - startTime;
-    logger.info(`Qwen engine (streaming) completed in ${durationMs}ms (model: ${model})`);
-
-    return {
-      sessionId,
-      result: fullResult,
-      durationMs,
-      numTurns: 1,
-    };
   }
 }

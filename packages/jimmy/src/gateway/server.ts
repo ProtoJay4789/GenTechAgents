@@ -136,7 +136,7 @@ export async function startGateway(
   const codexEngine = new CodexEngine();
   const geminiEngine = new GeminiEngine();
   const qwenEngine = new QwenEngine();
-  const engines = new Map<string, InstanceType<typeof ClaudeEngine> | InstanceType<typeof CodexEngine> | InstanceType<typeof GeminiEngine> | QwenEngine>();
+  const engines = new Map<string, InstanceType<typeof ClaudeEngine> | InstanceType<typeof CodexEngine> | InstanceType<typeof GeminiEngine> | InstanceType<typeof QwenEngine>>();
   engines.set("claude", claudeEngine);
   engines.set("codex", codexEngine);
   engines.set("gemini", geminiEngine);

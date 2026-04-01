@@ -340,7 +340,8 @@ export interface JinnConfig {
     claude: { bin: string; model: string; effortLevel?: string; childEffortOverride?: string };
     codex: { bin: string; model: string; effortLevel?: string; childEffortOverride?: string };
     gemini?: { bin: string; model: string; effortLevel?: string; childEffortOverride?: string };
-    qwen?: { model: string; effortLevel?: string };
+    /** Qwen via DashScope API. Requires QWEN_API_KEY env var. */
+    qwen?: { model?: string; effortLevel?: string; childEffortOverride?: string };
   };
   connectors: Record<string, any> & {
     web?: WebConnectorConfig;
@@ -358,7 +359,7 @@ export interface JinnConfig {
     /** What to do when Claude hits a usage/rate limit. Default: "fallback" */
     rateLimitStrategy?: "wait" | "fallback";
     /** Engine to use when rateLimitStrategy="fallback". Default: "codex" */
-    fallbackEngine?: "codex";
+    fallbackEngine?: "codex" | "qwen";
   };
   cron?: {
     defaultDelivery?: CronDelivery;
