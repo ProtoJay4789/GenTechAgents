@@ -8,7 +8,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { JinnConfig, Connector, Employee } from "../shared/types.js";
 import { loadConfig } from "../shared/config.js";
 import { configureLogger, logger } from "../shared/logger.js";
-import { initDb, recoverStaleSessions, recoverStaleQueueItems, getInterruptedSessions, listSessions, updateSession } from "../sessions/registry.js";
+import { initDb, recoverStaleSessions, recoverStaleQueueItems, getInterruptedSessions, getSession, listSessions, updateSession } from "../sessions/registry.js";
 import { SessionManager } from "../sessions/manager.js";
 import { ClaudeEngine } from "../engines/claude.js";
 import { CodexEngine } from "../engines/codex.js";
@@ -25,6 +25,7 @@ import { TelegramConnector } from "../connectors/telegram/index.js";
 import { loadJobs } from "../cron/jobs.js";
 import { startScheduler, reloadScheduler, stopScheduler } from "../cron/scheduler.js";
 import { scanOrg } from "./org.js";
+import { PaperclipClient } from "../integrations/paperclip/client.js";
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -311,6 +312,23 @@ export async function startGateway(
   startScheduler(cronJobs, sessionManager, config, connectorMap);
   logger.info(`Loaded ${cronJobs.length} cron job(s)`);
 
+  // Start Paperclip integration (push session data to dashboard)
+  let paperclip: PaperclipClient | null = null;
+  if (config.integrations?.paperclip?.enabled) {
+    try {
+      paperclip = new PaperclipClient(config.integrations.paperclip);
+      await paperclip.start();
+      // Push initial org data
+      paperclip.syncOrg(employeeRegistry).catch((err) => {
+        logger.warn(`[paperclip] Initial org sync failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+      logger.info("Paperclip integration started");
+    } catch (err) {
+      logger.error(`Failed to start Paperclip integration: ${err instanceof Error ? err.message : err}`);
+      paperclip = null;
+    }
+  }
+
   // Mutable config reference for hot-reload
   let currentConfig = config;
 
@@ -327,6 +345,19 @@ export async function startGateway(
         } catch (err) {
           logger.warn(`WebSocket send failed, removing dead client: ${err instanceof Error ? err.message : err}`);
           wsClients.delete(client);
+        }
+      }
+    }
+
+    // Push session events to Paperclip
+    if (paperclip && event.startsWith("session:")) {
+      const p = payload as Record<string, unknown>;
+      if (p?.sessionId) {
+        try {
+          const session = getSession(p.sessionId as string);
+          if (session) paperclip.pushSessionUpdate(session);
+        } catch {
+          // Ignore — session may have been deleted
         }
       }
     }
@@ -445,6 +476,11 @@ export async function startGateway(
       employeeRegistry = scanOrg();
       logger.info(`Org directory changed, reloaded ${employeeRegistry.size} employee(s)`);
       emit("org:changed", {});
+      if (paperclip) {
+        paperclip.syncOrg(employeeRegistry).catch((err) => {
+          logger.warn(`[paperclip] Org sync failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
+      }
     },
     onSkillsChange: () => {
       logger.info("Skills changed, notifying clients");
@@ -531,6 +567,11 @@ export async function startGateway(
     // Terminate live engine subprocesses after marking sessions.
     claudeEngine.killAll();
     codexEngine.killAll();
+
+    // Stop Paperclip integration
+    if (paperclip) {
+      await paperclip.stop();
+    }
 
     // Stop cron scheduler
     stopScheduler();

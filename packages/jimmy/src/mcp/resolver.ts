@@ -118,6 +118,30 @@ function buildAvailableServers(config: McpGlobalConfig): Record<string, McpServe
     };
   }
 
+  // Google Workspace CLI — Google Drive, Gmail, Calendar, Sheets, etc.
+  if (config.google?.enabled) {
+    const env: Record<string, string> = {};
+    const clientId = resolveEnvVar(config.google.clientId);
+    const clientSecret = resolveEnvVar(config.google.clientSecret);
+    if (clientId) env.GOOGLE_CLIENT_ID = clientId;
+    if (clientSecret) env.GOOGLE_CLIENT_SECRET = clientSecret;
+    servers.google = {
+      command: "gws",
+      args: ["mcp"],
+      ...(Object.keys(env).length > 0 ? { env } : {}),
+    };
+  }
+
+  // Agent-Reach — internet access tools (web, YouTube, Twitter, Reddit, RSS, etc.)
+  if (config.agentReach?.enabled) {
+    const venvPath = config.agentReach.venvPath || path.join(os.homedir(), ".agent-reach-venv");
+    const agentReachBin = path.join(venvPath, "bin", "agent-reach");
+    servers["agent-reach"] = {
+      command: agentReachBin,
+      args: ["mcp"],
+    };
+  }
+
   // Custom user-defined MCP servers
   if (config.custom) {
     for (const [name, serverConfig] of Object.entries(config.custom)) {
