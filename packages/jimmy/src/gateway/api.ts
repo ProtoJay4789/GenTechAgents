@@ -329,6 +329,7 @@ export async function handleApiRequest(
           claude: { model: config.engines.claude.model, available: true },
           codex: { model: config.engines.codex.model, available: true },
           ...(config.engines.gemini ? { gemini: { model: config.engines.gemini.model, available: true } } : {}),
+          ...(config.engines.qwen ? { qwen: { model: config.engines.qwen.model, available: !!process.env.QWEN_API_KEY } } : {}),
         },
         sessions: { total: sessions.length, running, active: running },
         connectors,

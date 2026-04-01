@@ -336,10 +336,11 @@ export interface JinnConfig {
   jinn?: { version?: string };
   gateway: { port: number; host: string; streaming?: boolean };
   engines: {
-    default: "claude" | "codex" | "gemini";
+    default: "claude" | "codex" | "gemini" | "qwen";
     claude: { bin: string; model: string; effortLevel?: string; childEffortOverride?: string };
     codex: { bin: string; model: string; effortLevel?: string; childEffortOverride?: string };
     gemini?: { bin: string; model: string; effortLevel?: string; childEffortOverride?: string };
+    qwen?: { model: string; effortLevel?: string };
   };
   connectors: Record<string, any> & {
     web?: WebConnectorConfig;

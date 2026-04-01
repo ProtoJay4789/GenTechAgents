@@ -15,6 +15,8 @@ engines:
     bin: codex
     model: gpt-5.4
     effortLevel: high
+  qwen:
+    model: qwen-plus          # Options: qwen-plus, qwen-turbo, qwen-max, qwen3-235b-a22b
 
 connectors:
   slack:
