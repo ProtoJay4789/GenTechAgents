@@ -1061,6 +1061,7 @@ export default function SettingsPage() {
                     options={[
                       { value: "qwen-plus", label: "Qwen Plus" },
                       { value: "qwen-max", label: "Qwen Max" },
+                      { value: "qwen3.6-plus", label: "Qwen 3.6 Plus" },
                       { value: "qwen3.5-plus", label: "Qwen 3.5 Plus" },
                     ]}
                   />
