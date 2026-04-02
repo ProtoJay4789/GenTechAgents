@@ -40,13 +40,15 @@ interface Config {
     default?: string
     claude?: { bin?: string; model?: string; effortLevel?: string }
     codex?: { bin?: string; model?: string; effortLevel?: string }
+    gemini?: { bin?: string; model?: string; effortLevel?: string }
+    qwen?: { model?: string; effortLevel?: string }
   }
   sessions?: {
     maxDurationMinutes?: number
     maxCostUsd?: number
     interruptOnNewMessage?: boolean
     rateLimitStrategy?: "wait" | "fallback"
-    fallbackEngine?: "codex"
+    fallbackEngine?: "codex" | "qwen"
   }
   connectors?: {
     slack?: {
@@ -895,6 +897,8 @@ export default function SettingsPage() {
                     options={[
                       { value: "claude", label: "Claude" },
                       { value: "codex", label: "Codex" },
+                      { value: "gemini", label: "Gemini" },
+                      { value: "qwen", label: "Qwen" },
                     ]}
                   />
                 </FieldRow>
@@ -993,6 +997,88 @@ export default function SettingsPage() {
                     ]}
                   />
                 </FieldRow>
+
+                <div
+                  className="border-t border-[var(--separator)] mt-[var(--space-3)] pt-[var(--space-3)]"
+                />
+
+                <div
+                  className="text-[length:var(--text-caption1)] font-[var(--weight-semibold)] text-[var(--text-tertiary)] mb-[var(--space-2)]"
+                >
+                  Gemini
+                </div>
+                <FieldRow label="Binary Path">
+                  <SettingsInput
+                    value={config.engines?.gemini?.bin ?? ""}
+                    onChange={(v) =>
+                      updateConfig(["engines", "gemini", "bin"], v)
+                    }
+                    placeholder="gemini"
+                  />
+                </FieldRow>
+                <FieldRow label="Model">
+                  <SettingsSelect
+                    value={config.engines?.gemini?.model ?? "gemini-2.5-pro"}
+                    onChange={(v) =>
+                      updateConfig(["engines", "gemini", "model"], v)
+                    }
+                    options={[
+                      { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+                      { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+                    ]}
+                  />
+                </FieldRow>
+                <FieldRow label="Effort Level">
+                  <SettingsSelect
+                    value={config.engines?.gemini?.effortLevel ?? "default"}
+                    onChange={(v) =>
+                      updateConfig(["engines", "gemini", "effortLevel"], v)
+                    }
+                    options={[
+                      { value: "default", label: "Default" },
+                      { value: "low", label: "Low" },
+                      { value: "medium", label: "Medium" },
+                      { value: "high", label: "High" },
+                    ]}
+                  />
+                </FieldRow>
+
+                <div
+                  className="border-t border-[var(--separator)] mt-[var(--space-3)] pt-[var(--space-3)]"
+                />
+
+                <div
+                  className="text-[length:var(--text-caption1)] font-[var(--weight-semibold)] text-[var(--text-tertiary)] mb-[var(--space-2)]"
+                >
+                  Qwen
+                </div>
+                <FieldRow label="Model">
+                  <SettingsSelect
+                    value={config.engines?.qwen?.model ?? "qwen-plus"}
+                    onChange={(v) =>
+                      updateConfig(["engines", "qwen", "model"], v)
+                    }
+                    options={[
+                      { value: "qwen-plus", label: "Qwen Plus" },
+                      { value: "qwen-max", label: "Qwen Max" },
+                      { value: "qwen3.5-plus", label: "Qwen 3.5 Plus" },
+                    ]}
+                  />
+                </FieldRow>
+                <FieldRow label="Effort Level">
+                  <SettingsSelect
+                    value={config.engines?.qwen?.effortLevel ?? "default"}
+                    onChange={(v) =>
+                      updateConfig(["engines", "qwen", "effortLevel"], v)
+                    }
+                    options={[
+                      { value: "default", label: "Default" },
+                      { value: "low", label: "Low" },
+                      { value: "medium", label: "Medium" },
+                      { value: "high", label: "High" },
+                    ]}
+                  />
+                </FieldRow>
               </Section>
 
               {/* -- Section 5: Sessions -- */}
@@ -1025,15 +1111,29 @@ export default function SettingsPage() {
                     }
                     options={[
                       { value: "wait", label: "Wait & Auto-Resume" },
-                      { value: "fallback", label: "Switch to GPT (Codex)" },
+                      { value: "fallback", label: "Switch to Fallback Engine" },
                     ]}
                   />
                 </FieldRow>
+                {config.sessions?.rateLimitStrategy === "fallback" && (
+                  <FieldRow label="Fallback Engine">
+                    <SettingsSelect
+                      value={config.sessions?.fallbackEngine ?? "codex"}
+                      onChange={(v) =>
+                        updateConfig(["sessions", "fallbackEngine"], v)
+                      }
+                      options={[
+                        { value: "codex", label: "Codex (GPT)" },
+                        { value: "qwen", label: "Qwen" },
+                      ]}
+                    />
+                  </FieldRow>
+                )}
                 <div
                   className="text-[length:var(--text-caption1)] text-[var(--label-secondary)] mt-[4px]"
                 >
                   "Wait" pauses the session and continues automatically when Claude resets.
-                  "Switch" answers immediately using GPT, then returns to Claude once the reset window passes.
+                  "Switch" answers immediately using the fallback engine, then returns to Claude once the reset window passes.
                 </div>
               </Section>
 

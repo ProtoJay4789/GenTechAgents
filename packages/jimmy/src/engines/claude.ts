@@ -26,6 +26,18 @@ function isTransientError(stderr: string, code: number | null): boolean {
   return TRANSIENT_PATTERNS.some((pat) => pat.test(stderr));
 }
 
+/** Auth errors are permanent — never retry */
+const AUTH_ERROR_PATTERNS = [
+  /OAuth.*token.*expired/i,
+  /authentication.*failed/i,
+  /authentication_error/i,
+  /API key.*invalid/i,
+];
+
+function isAuthError(text: string): boolean {
+  return AUTH_ERROR_PATTERNS.some((pat) => pat.test(text));
+}
+
 const MAX_RETRIES = 2;
 const RETRY_BASE_MS = 1000;
 
@@ -80,6 +92,15 @@ export class ClaudeEngine implements InterruptibleEngine {
 
       // If the process was intentionally killed, don't retry
       if (result.error.startsWith("Interrupted")) return result;
+
+      // Auth errors are permanent — surface immediately without retrying
+      if (isAuthError(result.error)) {
+        logger.error(`Claude authentication error: ${result.error.slice(0, 300)}`);
+        return {
+          ...result,
+          error: `Authentication failed: ${result.error}. Please refresh your API key or OAuth token.`,
+        };
+      }
 
       // Dead session (expired/invalid --resume ID) — clear the stale ID so the
       // next attempt (if any) starts fresh instead of retrying the same dead session.
@@ -573,6 +594,7 @@ export class ClaudeEngine implements InterruptibleEngine {
     // Allow --dangerously-skip-permissions when running as root (e.g. server deployments)
     if (process.getuid?.() === 0) {
       cleanEnv.CLAUDE_CODE_BUBBLEWRAP = "1";
+      cleanEnv.CLAUDE_CODE_SKIP_ROOT_CHECK = "1";
     }
     return cleanEnv;
   }

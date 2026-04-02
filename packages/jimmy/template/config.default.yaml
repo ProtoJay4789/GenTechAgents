@@ -9,7 +9,7 @@ engines:
   default: claude
   claude:
     bin: claude
-    model: opus
+    model: sonnet
     effortLevel: medium
   codex:
     bin: codex
