@@ -415,6 +415,28 @@ export class SessionManager {
             const fallbackConfig = fallbackName === "qwen"
               ? (this.config.engines.qwen ?? this.config.engines.codex)
               : this.config.engines.codex;
+
+            // Pre-check: skip fallback if engine requires an API key that isn't set
+            if (fallbackName === "qwen" && !process.env.QWEN_API_KEY) {
+              logger.warn(`Fallback engine "qwen" has no QWEN_API_KEY — skipping fallback`);
+              await connector.replyMessage(
+                target,
+                `⚠️ Claude usage limit reached${resumeText ? `. Resets ${resumeText}` : ""}. Qwen fallback not configured (no API key). Please wait for Claude to reset.`,
+              ).catch(() => {});
+              updateSession(session.id, {
+                status: "error",
+                lastActivity: new Date().toISOString(),
+                lastError: "Rate limited — fallback engine (Qwen) not configured",
+              });
+              if (decorateMessages && connector.setTypingStatus) {
+                await connector.setTypingStatus(target.channel, threadTs, "").catch(() => {});
+              }
+              if (decorateMessages && capabilities.reactions) {
+                await connector.removeReaction(target, "eyes").catch(() => {});
+              }
+              return;
+            }
+
             const fallbackEffort = resolveEffort(fallbackConfig, session, employee);
             const fallbackResume = typeof engineSessions[fallbackName] === "string" ? (engineSessions[fallbackName] as string) : undefined;
             const history = getMessages(session.id)
@@ -436,6 +458,33 @@ export class SessionManager {
               attachments: attachments.length > 0 ? attachments : undefined,
               sessionId: session.id,
             });
+
+            // If the fallback engine itself failed, revert to original engine
+            // to avoid a dead-session loop (e.g. Qwen with no API key)
+            if (fallbackResult.error && !fallbackResult.result?.trim()) {
+              logger.warn(`Fallback engine "${fallbackName}" failed: ${fallbackResult.error.slice(0, 200)}. Reverting to claude.`);
+              const revertMeta = { ...(getSessionBySessionKey(msg.sessionKey)?.transportMeta || nextMeta) } as Record<string, unknown>;
+              delete revertMeta["engineOverride"];
+              updateSession(session.id, {
+                engine: "claude",
+                engineSessionId: session.engineSessionId,
+                transportMeta: revertMeta as any,
+                status: "error",
+                lastActivity: new Date().toISOString(),
+                lastError: `Fallback engine "${fallbackName}" failed: ${fallbackResult.error.slice(0, 200)}`,
+              });
+              await connector.replyMessage(
+                target,
+                `Fallback engine "${fallbackLabel}" is not available. Reverting to Claude. Please retry when Claude resets.`,
+              ).catch(() => {});
+              if (decorateMessages && connector.setTypingStatus) {
+                await connector.setTypingStatus(target.channel, threadTs, "").catch(() => {});
+              }
+              if (decorateMessages && capabilities.reactions) {
+                await connector.removeReaction(target, "eyes").catch(() => {});
+              }
+              return;
+            }
 
             const fallbackText = fallbackResult.result?.trim()
               ? fallbackResult.result
