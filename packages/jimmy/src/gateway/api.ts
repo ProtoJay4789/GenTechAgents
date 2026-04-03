@@ -2102,7 +2102,7 @@ async function runWebSession(
             systemPrompt,
             cwd: JINN_HOME,
             bin: fallbackConfig.bin,
-            model: currentSession.model ?? fallbackConfig.model,
+            model: fallbackConfig.model,
             effortLevel: fallbackEffort,
             cliFlags: employee?.cliFlags,
             sessionId: currentSession.id,
