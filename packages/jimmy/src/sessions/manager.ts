@@ -452,7 +452,7 @@ export class SessionManager {
               systemPrompt,
               cwd: JINN_HOME,
               bin: "bin" in fallbackConfig ? (fallbackConfig as any).bin : undefined,
-              model: session.model ?? fallbackConfig.model,
+              model: fallbackConfig.model,
               effortLevel: fallbackEffort,
               cliFlags: employee?.cliFlags,
               attachments: attachments.length > 0 ? attachments : undefined,
